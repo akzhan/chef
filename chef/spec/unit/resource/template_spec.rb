@@ -76,5 +76,16 @@ describe Chef::Resource::Template do
       @resource.local.should == false
     end
   end
+
+  describe "ignore_missing" do
+    it "should accept a boolean for whether missing files are ignored" do
+      @resource.ignore_missing(true)
+      @resource.ignore_missing.should == true
+    end
+
+    it "should default to false" do
+      @resource.ignore_missing.should == false
+    end
+  end
   
 end

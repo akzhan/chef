@@ -41,10 +41,18 @@ class Chef
             name !~ /(?:^|#{Regexp.escape(::File::SEPARATOR)})\.\.?$/
           end
         )
-        files_to_transfer.each do |cookbook_file_relative_path|
-          create_cookbook_file(cookbook_file_relative_path)
-          files_to_purge.delete(::File.dirname(::File.join(@new_resource.path, cookbook_file_relative_path)))
-          files_to_purge.delete(::File.join(@new_resource.path, cookbook_file_relative_path))
+        begin
+          files_to_transfer.each do |cookbook_file_relative_path|
+            create_cookbook_file(cookbook_file_relative_path)
+            files_to_purge.delete(::File.dirname(::File.join(@new_resource.path, cookbook_file_relative_path)))
+            files_to_purge.delete(::File.join(@new_resource.path, cookbook_file_relative_path))
+          end
+        rescue Chef::Exceptions::FileNotFound => e
+          if @new_resource.ignore_missing
+            Chef::Log.debug("Cookbook file not found in source path #{@new_resource.source}, ignoring")
+          else
+            raise e
+          end
         end
         purge_unmanaged_files(files_to_purge)
       end

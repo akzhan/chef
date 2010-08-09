@@ -130,6 +130,12 @@ describe Chef::Provider::RemoteDirectory do
         ::File.exist?(@destination_dir + '/a/multiply/nested/directory/qux.txt').should be_false
       end
     end
-
+  end
+  describe "ignore_missing is set" do
+    it "doesn't blow up when the source doesn't exist" do
+      @resource.source "doesntexist"
+      @resource.ignore_missing(true)
+      @provider.action_create
+    end
   end
 end

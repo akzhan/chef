@@ -60,6 +60,14 @@ describe Chef::Provider::Template do
       @provider.template_location.should == CHEF_SPEC_DATA + '/cookbooks/openldap/templates/default/test.erb'
     end
 
+    describe "when ignore_missing is set" do
+      it "should not bomb out if the template does not exist" do
+        @resource.ignore_missing true
+        @resource.source "missingfile.erb"
+        @provider.action_create
+      end
+    end
+
     describe "when the target file does not exist" do
       it "creates the template with the rendered content" do
         @node[:slappiness] = "a warm gun"

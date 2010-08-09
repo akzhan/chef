@@ -30,6 +30,7 @@ class Chef
         @cookbook = nil
         @local = false
         @variables = Hash.new
+        @ignore_missing = false
       end
 
       def source(file=nil)
@@ -59,6 +60,14 @@ class Chef
       def local(args=nil)
         set_or_return(
           :local,
+          args,
+          :kind_of => [ TrueClass, FalseClass ]
+        )
+      end
+      
+      def ignore_missing(args=nil)
+        set_or_return(
+          :ignore_missing,
           args,
           :kind_of => [ TrueClass, FalseClass ]
         )

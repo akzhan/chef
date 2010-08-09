@@ -37,6 +37,7 @@ class Chef
         @files_mode = 0644
         @allowed_actions.push(:create, :delete)
         @cookbook = nil
+        @ignore_missing = false
       end
 
       def source(args=nil)
@@ -92,6 +93,14 @@ class Chef
           :cookbook,
           args,
           :kind_of => String
+        )
+      end
+      
+      def ignore_missing(args=nil)
+        set_or_return(
+          :ignore_missing,
+          args,
+          :kind_of => [ TrueClass, FalseClass ]
         )
       end
 

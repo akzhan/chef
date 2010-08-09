@@ -181,4 +181,12 @@ EXPECTED
       @provider.action_create_if_missing
     end
   end
+  
+  describe "when ignore_missing is set" do
+    it "doesn't bomb out if the source file doesn't exist" do
+      @new_resource.ignore_missing true
+      @new_resource.source "missingfile"
+      @provider.action_create
+    end
+  end
 end

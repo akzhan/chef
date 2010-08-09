@@ -59,8 +59,17 @@ class Chef
       
       def file_cache_location
         @file_cache_location ||= begin
-          cookbook = run_context.cookbook_collection[resource_cookbook]
-          cookbook.preferred_filename_on_disk_location(node, :files, @new_resource.source, @new_resource.path)
+          begin
+            cookbook = run_context.cookbook_collection[resource_cookbook]
+            cookbook.preferred_filename_on_disk_location(node, :files, @new_resource.source, @new_resource.path)
+          rescue Chef::Exceptions::FileNotFound => e
+            if @new_resource.ignore_missing
+              Chef::Log.debug("Cookbook file not found in source path #{@new_resource.source}, ignoring")
+              nil
+            else
+              raise e
+            end
+          end
         end
       end
       

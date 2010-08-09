@@ -30,6 +30,7 @@ class Chef
         @action = "create"
         @source = ::File.basename(name)
         @cookbook = nil
+        @ignore_missing = false
       end
       
       def source(source_filename=nil)
@@ -38,6 +39,10 @@ class Chef
       
       def cookbook(cookbook_name=nil)
         set_or_return(:cookbook, cookbook_name, :kind_of => String)
+      end
+      
+      def ignore_missing(ignore_missing=nil)
+        set_or_return(:ignore_missing, ignore_missing, :kind_of => [ TrueClass, FalseClass ])
       end
 
     end

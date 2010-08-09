@@ -40,6 +40,11 @@ describe Chef::Resource::CookbookFile do
     @cookbook_file.cookbook("munin")
     @cookbook_file.cookbook.should == 'munin'
   end
+
+  it "has an ignore_missing parameter" do
+    @cookbook_file.ignore_missing(true)
+    @cookbook_file.ignore_missing.should == true
+  end
   
   it "sets the provider to Chef::Provider::CookbookFile" do
     @cookbook_file.provider.should == Chef::Provider::CookbookFile

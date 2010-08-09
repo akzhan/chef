@@ -72,4 +72,9 @@ describe Chef::Resource::RemoteDirectory do
     @resource.files_owner 1000
     @resource.files_owner.should eql(1000)
   end
+
+  it "should accept true for the ignore_missing" do
+    @resource.ignore_missing true
+    @resource.ignore_missing.should eql(true)
+  end
 end
