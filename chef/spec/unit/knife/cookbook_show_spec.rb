@@ -16,7 +16,7 @@
 # limitations under the License.
 #
 
-# rename to cookbook not coookbook
+# rename to cookbook not cookbook
 require File.expand_path(File.join(File.dirname(__FILE__), "..", "..", "spec_helper"))
 
 describe Chef::Knife::CookbookShow do
