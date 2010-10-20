@@ -418,10 +418,25 @@ class Chef
       object = klass.load(name)
 
       output = edit_data(object)
-      
-      output.save
 
-      self.msg("Saved #{output}")
+      # Only make the save if the user changed the object.
+      #
+      # Output JSON for the original (object) and edited (output), then parse 
+      # them without reconstituting the objects into real classes
+      # (create_additions=false). Then, compare the resulting simple objects,
+      # which will be Array/Hash/String/etc. 
+      #
+      # We wouldn't have to do these shenanigans if all the editable objects 
+      # implemented to_hash, or if to_json against a hash returned a string 
+      # with stable key order.
+      object_parsed_again = JSON.parse(object.to_json, :create_additions => false)
+      output_parsed_again = JSON.parse(output.to_json, :create_additions => false)
+      if object_parsed_again != output_parsed_again
+        output.save
+        self.msg("Saved #{output}")
+      else
+        self.msg("Object unchanged, not saving")
+      end
 
       output(format_for_display(object)) if config[:print_after]
     end

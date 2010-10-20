@@ -23,6 +23,7 @@ include Chef::Mixin::ShellOut
 
 CHEF_CLIENT = File.join(CHEF_PROJECT_ROOT, "chef", "bin", "chef-client")
 
+
 ###
 # When
 ###
@@ -49,6 +50,12 @@ end
 
 When /^I run the chef\-client with '(.+)'$/ do |args|
   @chef_args = args
+  When "I run the chef-client"
+end
+
+When "I run the chef-client with '$options' and the '$config_file' config" do |options, config_file|
+  @config_file = File.expand_path(File.join(configdir, "#{config_file}.rb"))
+  @chef_args = options
   When "I run the chef-client"
 end
 

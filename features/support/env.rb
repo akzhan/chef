@@ -25,6 +25,7 @@ KNIFE_CMD = File.expand_path(File.join(CHEF_PROJECT_ROOT, "chef", "bin", "knife"
 FEATURES_DATA = File.join(CHEF_PROJECT_ROOT, "features", "data")
 INTEGRATION_COOKBOOKS = File.join(FEATURES_DATA, "cookbooks")
 
+$:.unshift(CHEF_PROJECT_ROOT)
 $:.unshift(CHEF_PROJECT_ROOT + '/chef/lib')
 $:.unshift(CHEF_PROJECT_ROOT + '/chef-server-api/lib')
 $:.unshift(CHEF_PROJECT_ROOT + '/chef-server-webui/lib')
@@ -45,6 +46,7 @@ require 'tmpdir'
 require 'chef/streaming_cookbook_uploader'
 require 'webrick'
 require 'restclient'
+require 'features/support/couchdb_replicate'
 
 include Chef::Mixin::ShellOut
 
@@ -102,10 +104,7 @@ def create_databases
 end
 
 def prepare_replicas
-  c = Chef::REST.new(Chef::Config[:couchdb_url], nil, nil)
-  c.put_rest("chef_integration_safe/", nil)
-  c.post_rest("_replicate", { "source" => "#{Chef::Config[:couchdb_url]}/chef_integration", "target" => "#{Chef::Config[:couchdb_url]}/chef_integration_safe" })
-  c.delete_rest("chef_integration")
+  replicate_dbs({ :source_db => "#{Chef::Config[:couchdb_url]}/chef_integration", :target_db => "#{Chef::Config[:couchdb_url]}/chef_integration_safe" })
 end
 
 def cleanup
@@ -199,7 +198,19 @@ module ChefWorld
       :AccessLog    => [ StringIO.new, WEBrick::AccessLog::COMMON_LOG_FORMAT ]
     )
   end
-  
+
+  attr_accessor :apt_server_thread
+
+  def apt_server
+    @apt_server ||= WEBrick::HTTPServer.new(
+      :Port         => 9000,
+      :DocumentRoot => datadir + "/apt/var/www/apt",
+      # Make WEBrick STFU
+      :Logger       => Logger.new(StringIO.new),
+      :AccessLog    => [ StringIO.new, WEBrick::AccessLog::COMMON_LOG_FORMAT ]
+    )
+  end
+
   def make_admin
     admin_client
     @rest = Chef::REST.new(Chef::Config[:registration_url], 'bobo', "#{tmpdir}/bobo.pem")
@@ -232,7 +243,12 @@ module ChefWorld
     #Chef::Config[:client_key] = "#{tmpdir}/not_admin.pem"
     #Chef::Config[:node_name] = "not_admin"
   end
-  
+
+  def couchdb_rest_client
+    Chef::REST.new('http://localhost:5984/chef_integration', false, false)
+  end
+
+
 end
 
 World(ChefWorld)
@@ -241,13 +257,9 @@ Before do
   system("mkdir -p #{tmpdir}")
   system("cp -r #{File.join(Dir.tmpdir, "validation.pem")} #{File.join(tmpdir, "validation.pem")}")
   system("cp -r #{File.join(Dir.tmpdir, "webui.pem")} #{File.join(tmpdir, "webui.pem")}")
-  c = Chef::REST.new(Chef::Config[:couchdb_url], nil, nil)
-  c.delete_rest("chef_integration/") rescue nil
-  Chef::CouchDB.new(Chef::Config[:couchdb_url], "chef_integration").create_db
-  c.post_rest("_replicate", { 
-    "source" => "#{Chef::Config[:couchdb_url]}/chef_integration_safe",
-    "target" => "#{Chef::Config[:couchdb_url]}/chef_integration" 
-  })
+  
+  replicate_dbs({:source_db => "#{Chef::Config[:couchdb_url]}/chef_integration_safe",
+                 :target_db => "#{Chef::Config[:couchdb_url]}/chef_integration"})
 end
 
 After do
@@ -256,7 +268,10 @@ After do
   s.solr_commit
   gemserver.shutdown
   gemserver_thread && gemserver_thread.join
-  
+
+  apt_server.shutdown
+  apt_server_thread && apt_server_thread.join
+
   cleanup_files.each do |file|
     system("rm #{file}")
   end
