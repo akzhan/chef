@@ -18,7 +18,7 @@
 
 require 'chef/knife'
 require 'chef/node'
-require 'json'
+require 'chef/json'
 
 class Chef
   class Knife
@@ -35,6 +35,11 @@ class Chef
         :short => "-r",
         :long => "--run-list",
         :description => "Show only the run list"
+        
+      option :environment,
+        :short        => "-E",
+        :long         => "--environment",
+        :description  => "Show only the Chef environment"
 
       def run 
         @node_name = @name_args[0]

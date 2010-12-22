@@ -2,7 +2,7 @@
 # Author:: Adam Jacob (<adam@opscode.com>)
 # Author:: Tim Hinderliter (<tim@opscode.com>)
 # Author:: Christopher Walters (<cw@opscode.com>)
-# Copyright:: Copyright (c) 2008, 2010 Opscode, Inc.
+# Copyright:: Copyright 2008-2010 Opscode, Inc.
 # License:: Apache License, Version 2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,8 @@ require 'chef/rest'
 
 describe Chef::Client do
   before do
+    Chef::Log.logger = Logger.new(StringIO.new)
+
     # Node/Ohai data
     @hostname = "hostname"
     @fqdn = "hostname.example.org"
@@ -40,6 +42,7 @@ describe Chef::Client do
 
     @node = Chef::Node.new(@hostname)
     @node.name(@fqdn)
+    @node.chef_environment("_default")
     @node[:platform] = "example-platform"
     @node[:platform_version] = "example-platform-1.0"
 
@@ -78,6 +81,10 @@ describe Chef::Client do
       mock_chef_rest_for_node.should_receive(:get_rest).with("nodes/#{@fqdn}").and_return(@node)
       mock_chef_rest_for_node.should_receive(:put_rest).with("nodes/#{@fqdn}", @node).exactly(2).times.and_return(@node)
 
+      ## Node expansion w/ environments
+      environment = mock("default Chef::Environment with empty attributes", :attributes => {})
+      Chef::Environment.stub!(:load).and_return(environment)
+
       # --Client.sync_cookbooks -- downloads the list of cookbooks to sync
       #
 
@@ -87,6 +94,8 @@ describe Chef::Client do
       Chef::Config.cookbook_path(File.expand_path(File.join(CHEF_SPEC_DATA, "run_context", "cookbooks")))
 
       @client.stub!(:sync_cookbooks).and_return({})
+      @client.should_receive(:run_started)
+      @client.should_receive(:run_completed_successfully)
       @client.run
 
 
