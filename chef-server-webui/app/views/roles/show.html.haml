@@ -44,7 +44,7 @@
                   - recipes.each_with_index do |recipe, i|
                     %tr
                       %td.position= i
-                      %td= recipes
+                      %td= recipe
           .left 
             %h3 Default Attributes
             = build_tree('defattrs', @role.default_attributes)
