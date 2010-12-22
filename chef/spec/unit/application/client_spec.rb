@@ -28,6 +28,8 @@ describe Chef::Application::Client, "reconfigure" do
     Chef::Config[:json_attribs] = nil
     Chef::Config[:interval] = 10
     Chef::Config[:splay] = nil
+
+    Chef::Config[:once] = false
   end
 
   after do
@@ -44,6 +46,26 @@ describe Chef::Application::Client, "reconfigure" do
       @app.reconfigure
       Chef::Config.interval.should == 1800
     end
+  end
+
+  describe "when configured to run once" do
+    before do
+      Chef::Config[:once] = true
+      Chef::Config[:daemonize] = false
+      Chef::Config[:splay] = 60
+      Chef::Config[:interval] = 1800
+    end
+
+    it "ignores the splay" do
+      @app.reconfigure
+      Chef::Config.splay.should be_nil
+    end
+
+    it "forces the interval to nil" do
+      @app.reconfigure
+      Chef::Config.interval.should be_nil
+    end
+
   end
 
   describe "when the json_attribs configuration option is specified" do
@@ -77,7 +99,7 @@ describe Chef::Application::Client, "reconfigure" do
       end
 
       it "should parse the json out of the file" do
-        JSON.should_receive(:parse).with(@json.read)
+        Chef::JSON.should_receive(:from_json).with(@json.read)
         @app.reconfigure
       end
     end
@@ -87,7 +109,7 @@ describe Chef::Application::Client, "reconfigure" do
         Chef::Config[:json_attribs] = "/etc/chef/dna.json"
         @json = mock("Tempfile", :read => {:a=>"b"}.to_json, :null_object => true)
         @app.stub!(:open).with("/etc/chef/dna.json").and_return(@json)
-        JSON.stub!(:parse).with(@json.read).and_raise(JSON::ParserError)
+        Chef::JSON.stub!(:from_json).with(@json.read).and_raise(JSON::ParserError)
         Chef::Application.stub!(:fatal!).and_return(true)
       end
       

@@ -190,7 +190,7 @@ module Shef
       @client.register
       @client.build_node
       
-      @client.sync_cookbooks({})
+      @client.sync_cookbooks
     end
 
   end
@@ -219,7 +219,7 @@ module Shef
 
       ohai_data = @ohai.data.merge(@node.automatic_attrs)
 
-      @node.process_external_attrs(ohai_data,nil)
+      @node.consume_external_attrs(ohai_data,nil)
       @node.reset_defaults_and_overrides
 
       @node
@@ -263,7 +263,7 @@ module Shef
       @client.register
       @client.build_node
 
-      @client.sync_cookbooks({})
+      @client.sync_cookbooks
     end
 
   end

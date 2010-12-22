@@ -46,8 +46,9 @@ class Chef
         if cl.cookbook_exists?(cookbook_name)
           cookbook = cl[cookbook_name]
           Chef::CookbookUploader.validate_cookbook(cookbook)
-          tmp_cookbook_dir = Chef::CookbookUploader.create_build_dir(cookbook)
+          tmp_cookbook_dir = Chef::CookbookSiteStreamingUploader.create_build_dir(cookbook)
           begin
+            Chef::Log.debug("temp cookbook directory is #{tmp_cookbook_dir.inspect}")
             Chef::Log.info("Making tarball #{cookbook_name}.tgz")
             Chef::Mixin::Command.run_command(:command => "tar -czf #{cookbook_name}.tgz #{cookbook_name}", :cwd => tmp_cookbook_dir)
           rescue => e
@@ -84,7 +85,7 @@ class Chef
            :cookbook => category_string
          })
 
-         res = JSON.parse(http_resp.body)
+         res = Chef::JSON.from_json(http_resp.body)
          if http_resp.code.to_i != 201
            if res['error_messages']
              if res['error_messages'][0] =~ /Version already exists/

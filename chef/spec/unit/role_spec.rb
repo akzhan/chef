@@ -108,6 +108,32 @@ describe Chef::Role do
     end
   end
 
+  describe "update_from!" do
+    before(:each) do
+      @role.name('mars_volta')
+      @role.description('Great band!')
+      @role.run_list('one', 'two', 'role[a]')
+      @role.default_attributes({ :el_groupo => 'nuevo' })
+      @role.override_attributes({ :deloused => 'in the comatorium' })
+
+      @example = Chef::Role.new
+      @example.name('newname')
+      @example.description('Really Great band!')
+      @example.run_list('alpha', 'bravo', 'role[alpha]')
+      @example.default_attributes({ :el_groupo => 'nuevo dos' })
+      @example.override_attributes({ :deloused => 'in the comatorium XOXO' })
+    end
+
+    it "should update all fields except for name" do
+      @role.update_from!(@example)
+      @role.name.should == "mars_volta"
+      @role.description.should == @example.description
+      @role.run_list.should == @example.run_list
+      @role.default_attributes.should == @example.default_attributes
+      @role.override_attributes.should == @example.override_attributes
+    end
+  end
+
   describe "serialize" do
     before(:each) do
       @role.name('mars_volta')
@@ -115,11 +141,11 @@ describe Chef::Role do
       @role.run_list('one', 'two', 'role[a]')
       @role.default_attributes({ :el_groupo => 'nuevo' })
       @role.override_attributes({ :deloused => 'in the comatorium' })
-      @serial = @role.to_json
+      @serial = Chef::JSON.to_json(@role)
     end
 
     it "should serialize to a json hash" do
-      @role.to_json.should match(/^\{.+\}$/)
+      Chef::JSON.to_json(@role).should match(/^\{.+\}$/)
     end
 
     %w{
@@ -151,7 +177,7 @@ describe Chef::Role do
       @role.run_list('one', 'two', 'role[a]')
       @role.default_attributes({ 'el_groupo' => 'nuevo' })
       @role.override_attributes({ 'deloused' => 'in the comatorium' })
-      @deserial = JSON.parse(@role.to_json)
+      @deserial = Chef::JSON.from_json(Chef::JSON.to_json(@role))
     end
 
     it "should deserialize to a Chef::Role object" do

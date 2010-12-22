@@ -213,6 +213,172 @@ describe Chef::CookbookVersion do
 
   end
 
+  describe "when cleaning up unused cookbook components" do
+    before do
+      Chef::CookbookVersion.reset_cache_validity
+    end
 
+    it "removes all files that belong to unused cookbooks" do
+      file_cache = mock("Chef::FileCache with files from unused cookbooks")
+      valid_cached_cb_files = %w{cookbooks/valid1/recipes/default.rb cookbooks/valid2/recipes/default.rb}
+      obsolete_cb_files = %w{cookbooks/old1/recipes/default.rb cookbooks/old2/recipes/default.rb}
+      file_cache.should_receive(:find).with(File.join(%w{cookbooks ** *})).and_return(valid_cached_cb_files + obsolete_cb_files)
+      file_cache.should_receive(:delete).with('cookbooks/old1/recipes/default.rb')
+      file_cache.should_receive(:delete).with('cookbooks/old2/recipes/default.rb')
+      cookbook_hash = {"valid1"=> {}, "valid2" => {}}
+      Chef::CookbookVersion.stub!(:cache).and_return(file_cache)
+      Chef::CookbookVersion.clear_obsoleted_cookbooks(cookbook_hash)
+    end
+
+    it "removes all files not validated during the chef run" do
+      file_cache = mock("Chef::FileCache with files from unused cookbooks")
+      unused_template_files = %w{cookbooks/unused/templates/default/foo.conf.erb cookbooks/unused/tempaltes/default/bar.conf.erb}
+      valid_cached_cb_files = %w{cookbooks/valid1/recipes/default.rb cookbooks/valid2/recipes/default.rb}
+      Chef::CookbookVersion.valid_cache_entries['cookbooks/valid1/recipes/default.rb'] = true
+      Chef::CookbookVersion.valid_cache_entries['cookbooks/valid2/recipes/default.rb'] = true
+      file_cache.should_receive(:find).with(File.join(%w{cookbooks ** *})).and_return(valid_cached_cb_files + unused_template_files)
+      file_cache.should_receive(:delete).with('cookbooks/unused/templates/default/foo.conf.erb')
+      file_cache.should_receive(:delete).with('cookbooks/unused/tempaltes/default/bar.conf.erb')
+      cookbook_hash = {"valid1"=> {}, "valid2" => {}}
+      Chef::CookbookVersion.stub!(:cache).and_return(file_cache)
+      Chef::CookbookVersion.cleanup_file_cache
+    end
+
+    describe "on chef-solo" do
+      before do
+        Chef::Config[:solo] = true
+      end
+
+      after do
+        Chef::Config[:solo] = false
+      end
+
+      it "does not remove anything" do
+        Chef::CookbookVersion.cache.stub!(:find).and_return(%w{cookbooks/valid1/recipes/default.rb cookbooks/valid2/recipes/default.rb})
+        Chef::CookbookVersion.cache.should_not_receive(:delete)
+        Chef::CookbookVersion.cleanup_file_cache
+      end
+
+    end
+
+  end
+
+  describe "<=>" do
+
+    it "should sort based on the version number" do
+      examples = [
+                  # smaller, larger
+                  ["1.0", "2.0"],
+                  ["1.2.3", "1.2.4"],
+                  ["1.2.3", "1.3.0"],
+                  ["1.2.3", "1.3"],
+                  ["1.2.3", "2.1.1"],
+                  ["1.2.3", "2.1"],
+                  ["1.2", "1.2.4"],
+                  ["1.2", "1.3.0"],
+                  ["1.2", "1.3"],
+                  ["1.2", "2.1.1"],
+                  ["1.2", "2.1"]
+                 ]
+      examples.each do |smaller, larger|
+        sm = Chef::CookbookVersion.new("foo")
+        lg = Chef::CookbookVersion.new("foo")
+        sm.version = smaller
+        lg.version = larger
+        sm.should be < lg
+        lg.should be > sm
+        sm.should_not == lg
+      end
+    end
+
+    it "should equate versions 1.2 and 1.2.0" do
+      a = Chef::CookbookVersion.new("foo")
+      b = Chef::CookbookVersion.new("foo")
+      a.version = "1.2"
+      b.version = "1.2.0"
+      a.should == b
+    end
+    
+
+    it "should not allow you to sort cookbooks with different names" do
+      apt = Chef::CookbookVersion.new "apt"
+      apt.version = "1.0"
+      god = Chef::CookbookVersion.new "god"
+      god.version = "2.0"
+      lambda {apt <=> god}.should raise_error(Chef::Exceptions::CookbookVersionNameMismatch)
+    end
+  end
+
+  describe "when you set a version" do
+    before do
+      @cbv = Chef::CookbookVersion.new("version validation")
+    end
+    it "should accept valid cookbook versions" do
+      good_versions = %w(1.2 1.2.3 1000.80.50000 0.300.25)
+      good_versions.each do |v|
+        @cbv.version = v
+      end
+    end
+
+    it "should raise InvalidCookbookVersion for bad cookbook versions" do
+      bad_versions = ["1.2.3.4", "1.2.a4", "1", "a", "1.2 3", "1.2 a",
+                      "1 2 3", "1-2-3", "1_2_3", "1.2_3", "1.2-3"]
+      the_error = Chef::Exceptions::InvalidCookbookVersion
+      bad_versions.each do |v|
+        lambda {@cbv.version = v}.should raise_error(the_error)
+      end
+    end
+
+  end
+
+  describe "when deleting in the database" do
+    before do
+      @couchdb_driver = Chef::CouchDB.new
+      @cookbook_version = Chef::CookbookVersion.new("tatft", @couchdb_driver)
+      @cookbook_version.version = "1.2.3"
+      @couchdb_rev = "_123456789"
+      @cookbook_version.couchdb_rev = @couchdb_rev
+    end
+
+    it "deletes its document from couchdb" do
+      @couchdb_driver.should_receive(:delete).with("cookbook_version", "tatft-1.2.3", @couchdb_rev)
+      @cookbook_version.cdb_destroy
+    end
+
+    it "deletes associated checksum objects when purged" do
+      checksums = {"12345" => "/tmp/foo", "23456" => "/tmp/bar", "34567" => "/tmp/baz"}
+      @cookbook_version.stub!(:checksums).and_return(checksums)
+
+      chksum_docs = checksums.map do |md5, path|
+        cksum_doc = mock("Chef::Checksum for #{md5} at #{path}")
+        Chef::Checksum.should_receive(:cdb_load).with(md5, @couchdb_driver).and_return(cksum_doc)
+        cksum_doc.should_receive(:purge)
+        cksum_doc
+      end
+
+      @cookbook_version.should_receive(:cdb_destroy)
+      @cookbook_version.purge
+    end
+
+    it "successfully purges when associated checksum objects are missing" do
+      checksums = {"12345" => "/tmp/foo", "23456" => "/tmp/bar", "34567" => "/tmp/baz"}
+
+      chksum_docs = checksums.map do |md5, path|
+        cksum_doc = mock("Chef::Checksum for #{md5} at #{path}")
+        Chef::Checksum.should_receive(:cdb_load).with(md5, @couchdb_driver).and_return(cksum_doc)
+        cksum_doc.should_receive(:purge)
+        cksum_doc
+      end
+
+      missing_checksum = {"99999" => "/tmp/qux"}
+      Chef::Checksum.should_receive(:cdb_load).with("99999", @couchdb_driver).and_raise(Chef::Exceptions::CouchDBNotFound)
+
+      @cookbook_version.stub!(:checksums).and_return(checksums.merge(missing_checksum))
+
+      @cookbook_version.should_receive(:cdb_destroy)
+      lambda {@cookbook_version.purge}.should_not raise_error
+    end
+
+  end
 
 end

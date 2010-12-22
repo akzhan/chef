@@ -38,6 +38,11 @@ class Chef
       puts msg
     end
 
+    def self.reset_subcommands!
+      @@subcommands = {}
+      @subcommands_by_category = nil
+    end
+
     def self.inherited(subclass)
       unless subclass.unnamed?
         subcommands[subclass.snake_case_name] = subclass
@@ -121,7 +126,7 @@ class Chef
     def self.run(args, options={})
       load_commands
       subcommand_class = subcommand_class_from(args)
-      subcommand_class.options.merge!(options)
+      subcommand_class.options = options.merge!(subcommand_class.options)
       instance = subcommand_class.new(args)
       instance.configure_chef
       instance.run
@@ -149,6 +154,18 @@ class Chef
         end
       end
       subcommand_class || subcommand_not_found!(args)
+    end
+
+    protected
+
+    def load_late_dependency(dep, gem_name = nil)
+      begin
+        require dep
+      rescue LoadError
+        gem_name ||= dep.gsub('/', '-')
+        Chef::Log.fatal "#{gem_name} is not installed. run \"gem install #{gem_name}\" to install it."
+        exit 1
+      end
     end
 
     private
@@ -255,6 +272,7 @@ class Chef
       Chef::Config[:node_name] = config[:node_name] if config[:node_name]
       Chef::Config[:client_key] = config[:client_key] if config[:client_key]
       Chef::Config[:chef_server_url] = config[:chef_server_url] if config[:chef_server_url]
+      Chef::Config[:environment] = config[:environment] if config[:environment]
       Mixlib::Log::Formatter.show_time = false
       Chef::Log.init(Chef::Config[:log_location])
       Chef::Log.level(Chef::Config[:log_level])
@@ -273,7 +291,7 @@ class Chef
     def output(data)
       case config[:format]
       when "json", nil
-        stdout.puts JSON.pretty_generate(data)
+        stdout.puts Chef::JSON.to_json_pretty(data)
       when "yaml"
         require 'yaml'
         stdout.puts YAML::dump(data)
@@ -311,6 +329,13 @@ class Chef
       elsif config[:run_list]
         data = data.run_list.run_list
         { "run_list" => data }
+      elsif config[:environment]
+        if data.class == Chef::Node
+          {"chef_environment" => data.chef_environment}
+        else
+          # this is a place holder for now. Feel free to modify (i.e. add other cases). [nuo]
+          data
+        end
       elsif config[:id_only]
         data.respond_to?(:name) ? data.name : data["id"]
       else
@@ -319,7 +344,7 @@ class Chef
     end
 
     def edit_data(data, parse_output=true)
-      output = JSON.pretty_generate(data)
+      output = Chef::JSON.to_json_pretty(data)
       
       if (!config[:no_editor])
         filename = "knife-edit-"
@@ -337,7 +362,7 @@ class Chef
         File.unlink(filename)
       end
 
-      parse_output ? JSON.parse(output) : output
+      parse_output ? Chef::JSON.from_json(output) : output
     end
 
     def confirm(question, append_instructions=true)
@@ -372,6 +397,8 @@ class Chef
         relative_path = "nodes"
       elsif klass == Chef::DataBagItem
         relative_path = "data_bags/#{bag}"
+      elsif klass == Chef::Environment
+        relative_path = "environments"
       end
 
       relative_file = File.expand_path(File.join(Dir.pwd, relative_path, from_file))
@@ -388,7 +415,7 @@ class Chef
 
       case from_file
       when /\.(js|json)$/
-        JSON.parse(IO.read(filename))
+        Chef::JSON.from_json(IO.read(filename))
       when /\.rb$/
         r = klass.new
         r.from_file(filename)
@@ -407,10 +434,25 @@ class Chef
       object = klass.load(name)
 
       output = edit_data(object)
-      
-      output.save
 
-      self.msg("Saved #{output}")
+      # Only make the save if the user changed the object.
+      #
+      # Output JSON for the original (object) and edited (output), then parse 
+      # them without reconstituting the objects into real classes
+      # (create_additions=false). Then, compare the resulting simple objects,
+      # which will be Array/Hash/String/etc. 
+      #
+      # We wouldn't have to do these shenanigans if all the editable objects 
+      # implemented to_hash, or if to_json against a hash returned a string 
+      # with stable key order.
+      object_parsed_again = Chef::JSON.from_json(Chef::JSON.to_json(object), :create_additions => false)
+      output_parsed_again = Chef::JSON.from_json(Chef::JSON.to_json(output), :create_additions => false)
+      if object_parsed_again != output_parsed_again
+        output.save
+        self.msg("Saved #{output}")
+      else
+        self.msg("Object unchanged, not saving")
+      end
 
       output(format_for_display(object)) if config[:print_after]
     end

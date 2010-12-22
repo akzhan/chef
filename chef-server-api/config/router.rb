@@ -27,7 +27,17 @@ Merb::Router.prepare do
         :method => 'get').
     to(:controller => "nodes", :action => "cookbooks")
   # Roles
-  resources :roles
+  resources :roles do |r|
+    r.match('/environments', :method => 'get').to(:controller => "roles", :action => "environments")
+    r.match('/environments/:env_id', :method => 'get').to(:controller=>"roles", :action=>"environment")
+  end
+
+  # Environments
+  resources :environments do |e|
+    e.match("/cookbooks", :method => "get").to(:controller=>"environments", :action=>"list_cookbooks")
+    e.match("/nodes", :method => "get").to(:controller=>"environments", :action=>"list_nodes")
+    e.match("/roles/:role_id", :method => "get").to(:controller=>"environments", :action => "role")
+  end
 
   # Status
   match("/status").to(:controller => "status", :action => "index").name(:status)
@@ -50,6 +60,8 @@ Merb::Router.prepare do
         :method => 'get'
         ).to(:controller => "cookbooks", :action => "index")
 
+  match("/cookbooks/_latest", :method=>'get').to(:controller=>'cookbooks',:action=>'index_latest')
+
   match("/cookbooks/_recipes", :method=>'get').to(:controller=>'cookbooks',:action=>'index_recipes')
 
   match("/cookbooks/:cookbook_name/:cookbook_version",
@@ -61,13 +73,13 @@ Merb::Router.prepare do
   match("/cookbooks/:cookbook_name/:cookbook_version",
         :method => 'get',
         :cookbook_name => /[\w\.]+/,
-        :cookbook_version => /(\d+\.\d+\.\d+|_latest)/
-        ).to(:controller => "cookbooks", :action => "show")
+        :cookbook_version => /\d+\.\d+\.\d+|_latest/
+        ).to(:controller => "cookbooks", :action => "show").name(:cookbook_version)
 
   match("/cookbooks/:cookbook_name/:cookbook_version",
         :method => 'delete',
         :cookbook_name => /[\w\.]+/,
-        :cookbook_version => /(\d+\.\d+\.\d+|_latest)/
+        :cookbook_version => /\d+\.\d+\.\d+|_latest/
         ).to(:controller => "cookbooks", :action => "destroy")
 
   match("/cookbooks/:cookbook_name",
@@ -99,5 +111,38 @@ Merb::Router.prepare do
   resources :data, :controller => "data_bags"
 
   match('/').to(:controller => 'main', :action =>'index').name(:top)
+
+  # Need to monkey patch Merb so that it inflates JSON input with a higher
+  # recursion depth allowed (the default is 19). See CHEF-1292/PL-538.
+  module Merb
+    class Request
+      # ==== Returns
+      # Hash:: Parameters from body if this is a JSON request.
+      #
+      # ==== Notes
+      # If the JSON object parses as a Hash, it will be merged with the
+      # parameters hash.  If it parses to anything else (such as an Array, or
+      # if it inflates to an Object) it will be accessible via the inflated_object
+      # parameter.
+      #
+      # :api: private
+      def json_params
+        @json_params ||= begin
+          if Merb::Const::JSON_MIME_TYPE_REGEXP.match(content_type)
+            begin
+              # Call Chef's JSON utility instead of the default in Merb, 
+              # JSON.parse.
+              jobj = Chef::JSON.from_json(raw_post)
+              jobj = jobj.to_mash if jobj.is_a?(Hash)
+            rescue JSON::ParserError
+              jobj = Mash.new
+            end
+            jobj.is_a?(Hash) ? jobj : { :inflated_object => jobj }
+          end
+        end
+      end
+
+    end
+  end
 
 end

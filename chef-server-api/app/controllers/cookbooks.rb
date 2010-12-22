@@ -48,25 +48,21 @@ class Cookbooks < Application
     display response
   end
 
-  #FIXME: this is different from the rest of the API, but in a useful way...
   def index_latest
     cookbook_list = Chef::CookbookVersion.cdb_list_latest(true)
-    response = Hash.new
-    cookbook_list.map! do |cookbook_name, cookbook_version|
-      response[cookbook_name]={ :url=>absolute_url(:cookbook, :cookbook_name => cookbook_name, :cookbook_version => cookbook_version),
-                                :cookbook_name => cookbook_name, :cookbook_version=>cookbook_version}
+    response = cookbook_list.inject({}) do |res, cv|
+      res[cv.name] = absolute_url(:cookbook_version, :cookbook_name => cv.name, :cookbook_version => cv.version)
+      res
     end
     display response
   end
 
   def index_recipes
-    all_cookbooks = Array(Chef::CookbookVersion.cdb_list_latest(true))
-    all_cookbooks.map! do |cookbook|
-      cookbook.manifest["recipes"].map { |r| "#{cookbook.name}::#{File.basename(r['name'], ".rb")}" }
+    display Chef::CookbookVersion.cdb_list(true).inject({}) do |memo, f| 
+      memo[f.name] ||= {}
+      memo[f.name][f.version] = f.recipe_filenames_by_name.keys
+      memo
     end
-    all_cookbooks.flatten!
-    all_cookbooks.sort!
-    display all_cookbooks
   end
 
   def show_versions
@@ -86,7 +82,7 @@ class Cookbooks < Application
     checksum = params[:checksum]
     raise NotFound, "Cookbook #{cookbook_name} version #{cookbook_version} does not contain a file with checksum #{checksum}" unless cookbook.checksums.keys.include?(checksum)
 
-    filename = checksum_location(checksum)
+    filename = Chef::Checksum.new(checksum).file_location
     raise InternalServerError, "File with checksum #{checksum} not found in the repository (this should not happen)" unless File.exists?(filename)
 
     send_file(filename)
@@ -140,7 +136,11 @@ class Cookbooks < Application
       raise NotFound, "Cannot find a cookbook named #{cookbook_name} with version #{cookbook_version}"
     end
 
-    display cookbook.cdb_destroy
+    if params["purge"] == "true"
+      display cookbook.purge
+    else
+      display cookbook.cdb_destroy
+    end
   end
 
   private

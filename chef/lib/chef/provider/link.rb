@@ -87,7 +87,7 @@ class Chef
           Chef::Log.info("Setting owner to #{@set_user_id} for #{@new_resource}")
           @set_user_id = negative_complement(@set_user_id)
           ::File.lchown(@set_user_id, nil, @new_resource.target_file)
-          @new_resource.updated = true
+          @new_resource.updated_by_last_action(true)
         end
       end
       
@@ -110,7 +110,7 @@ class Chef
           Chef::Log.info("Setting group to #{@set_group_id} for #{@new_resource}")
           @set_group_id = negative_complement(@set_group_id)
           ::File.lchown(nil, @set_group_id, @new_resource.target_file)
-          @new_resource.updated = true
+          @new_resource.updated_by_last_action(true)
         end
       end
       
@@ -118,11 +118,16 @@ class Chef
         if @current_resource.to != ::File.expand_path(@new_resource.to, @new_resource.target_file)
           Chef::Log.info("Creating a #{@new_resource.link_type} link from #{@new_resource.to} -> #{@new_resource.target_file} for #{@new_resource}")
           if @new_resource.link_type == :symbolic
-            shell_out! "ln -nfs #{@new_resource.to} #{@new_resource.target_file}"
+            unless (::File.symlink?(@new_resource.target_file) && ::File.readlink(@new_resource.target_file) == @new_resource.to)
+              if ::File.symlink?(@new_resource.target_file) || ::File.exist?(@new_resource.target_file)
+                ::File.unlink(@new_resource.target_file)
+              end
+              ::File.symlink(@new_resource.to,@new_resource.target_file)
+          end
           elsif @new_resource.link_type == :hard
             ::File.link(@new_resource.to, @new_resource.target_file)
           end
-          @new_resource.updated = true
+          @new_resource.updated_by_last_action(true)
         end
         if @new_resource.link_type == :symbolic
           set_owner unless @new_resource.owner.nil?
@@ -135,7 +140,7 @@ class Chef
           if ::File.symlink?(@new_resource.target_file)
             Chef::Log.info("Deleting #{@new_resource} at #{@new_resource.target_file}")
             ::File.delete(@new_resource.target_file)
-            @new_resource.updated = true
+            @new_resource.updated_by_last_action(true)
           elsif ::File.exists?(@new_resource.target_file)
             raise Chef::Exceptions::Link, "Cannot delete #{@new_resource} at #{@new_resource.target_file}! Not a symbolic link."
           end
@@ -144,7 +149,7 @@ class Chef
              if ::File.exists?(@new_resource.to) && ::File.stat(@current_resource.target_file).ino == ::File.stat(@new_resource.to).ino
                Chef::Log.info("Deleting #{@new_resource} at #{@new_resource.target_file}")
                ::File.delete(@new_resource.target_file)
-               @new_resource.updated = true
+               @new_resource.updated_by_last_action(true)
              else
                raise Chef::Exceptions::Link, "Cannot delete #{@new_resource} at #{@new_resource.target_file}! Not a hard link."
              end

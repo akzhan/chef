@@ -319,7 +319,7 @@ begin
     end
 
     namespace :api do
-      [ :nodes, :roles, :clients ].each do |api|
+      [ :nodes, :roles, :clients, :environments ].each do |api|
           Cucumber::Rake::Task.new(api) do |apitask|
             apitask.profile = "api_#{api.to_s}"
           end
@@ -332,16 +332,31 @@ begin
         end
       end
 
+      namespace :environments do
+        Cucumber::Rake::Task.new("cookbooks") do |t|
+          t.profile = "api_environments_cookbook_list"
+        end
+
+        Cucumber::Rake::Task.new("nodes") do |t|
+          t.profile = "api_environments_node_list"
+        end
+      end
+
       namespace :nodes do
         Cucumber::Rake::Task.new("sync") do |t|
           t.profile = "api_nodes_sync"
         end
       end
 
+      desc "Run cucumber tests for the cookbooks portion of the REST API"
+      Cucumber::Rake::Task.new(:cookbooks) do |t|
+        t.profile = "api_cookbooks"
+      end
       namespace :cookbooks do
-        desc "Run cucumber tests for the cookbooks portion of the REST API"
-        Cucumber::Rake::Task.new(:cookbooks) do |t|
-          t.profile = "api_cookbooks"
+        %w{list show upload download delete}.each do |action|
+          Cucumber::Rake::Task.new(action) do |t|
+            t.profile = "api_cookbooks_#{action}"
+          end
         end
 
         Cucumber::Rake::Task.new(:cookbook_tarballs) do |t|
@@ -504,6 +519,12 @@ begin
           g.profile = "provider_package_rubygems"
         end
       end
+
+      desc "Run cucumber tests for knife"
+      Cucumber::Rake::Task.new(:knife) do |t|
+        t.profile = "knife"
+      end
+
     end
   end
 rescue LoadError

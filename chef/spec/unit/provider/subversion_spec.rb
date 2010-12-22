@@ -48,7 +48,7 @@ describe Chef::Provider::Subversion do
     end
     
     it "sets the revision to nil if there isn't any deployed code yet" do
-      ::File.should_receive(:exist?).with("/my/deploy/dir").and_return(false)
+      ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(false)
       @provider.find_current_revision.should be_nil
     end
     
@@ -62,7 +62,7 @@ describe Chef::Provider::Subversion do
                           "Last Changed Author: codeninja\n" +
                           "Last Changed Rev: 11410\n" + # Last Changed Rev is preferred to Revision
                           "Last Changed Date: 2009-03-25 06:09:56 -0600 (Wed, 25 Mar 2009)\n\n"
-      ::File.should_receive(:exist?).with("/my/deploy/dir").and_return(true)
+      ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(true)
       ::File.should_receive(:directory?).with("/my/deploy/dir").and_return(true)
       ::Dir.should_receive(:chdir).with("/my/deploy/dir").and_yield
       @stdout.stub!(:string).and_return(example_svn_info)
@@ -77,7 +77,7 @@ describe Chef::Provider::Subversion do
     
     it "gives nil as the current revision if the deploy dir isn't a SVN working copy" do
       example_svn_info = "svn: '/tmp/deploydir' is not a working copy\n"
-      ::File.should_receive(:exist?).with("/my/deploy/dir").and_return(true)
+      ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(true)
       ::File.should_receive(:directory?).with("/my/deploy/dir").and_return(true)
       ::Dir.should_receive(:chdir).with("/my/deploy/dir").and_yield
       @stdout.stub!(:string).and_return(example_svn_info)
@@ -90,8 +90,9 @@ describe Chef::Provider::Subversion do
     
   end
   
-  it "creates the current_resource object and sets its revision to the current deployment's revision" do
+  it "creates the current_resource object and sets its revision to the current deployment's revision as long as we're not exporting" do
     @provider.stub!(:find_current_revision).and_return("11410")
+    @provider.new_resource.instance_variable_set :@action, [:checkout]
     @provider.load_current_resource
     @provider.current_resource.name.should eql(@resource.name)
     @provider.current_resource.revision.should eql("11410")
@@ -166,31 +167,38 @@ describe Chef::Provider::Subversion do
     @provider.checkout_command.should eql("svn checkout --no-auth-cache -q  -r12345 "+ 
                                           "http://svn.example.org/trunk/ /my/deploy/dir")
   end
-  
+
   it "generates a sync command with default options" do
     @provider.sync_command.should eql("svn update -q  -r12345 /my/deploy/dir")
   end
-  
+
   it "generates an export command with default options" do
-    @provider.export_command.should eql("svn export -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir")
+    @provider.export_command.should eql("svn export --force -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir")
   end
-  
-  it "generates an export command with the --force option" do
-    expected = "svn export --force -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
-    @provider.export_command(:force => true).should == expected
+
+  it "doesn't try to find the current revision when loading the resource if running an export" do
+    @provider.new_resource.instance_variable_set :@action, [:export]
+    @provider.should_not_receive(:find_current_revision)
+    @provider.load_current_resource
   end
-  
+
+  it "doesn't try to find the current revision when loading the resource if running a force export" do
+    @provider.new_resource.instance_variable_set :@action, [:force_export]
+    @provider.should_not_receive(:find_current_revision)
+    @provider.load_current_resource
+  end
+
   it "runs an export with the --force option" do
     expected_cmd = "svn export --force -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
     @provider.should_receive(:run_command).with(:command => expected_cmd)
     @provider.action_force_export
   end
-  
+
   it "runs the checkout command for action_checkout" do
     expected_cmd = "svn checkout -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
     @provider.should_receive(:run_command).with(:command => expected_cmd)
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_checkout
+    @resource.should be_updated
   end
   
   it "runs commands with the user and group specified in the resource" do
@@ -198,39 +206,37 @@ describe Chef::Provider::Subversion do
     @resource.group "thisis"
     expected_cmd = "svn checkout -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
     @provider.should_receive(:run_command).with(:command => expected_cmd, :user => "whois", :group => "thisis")
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_checkout
+    @resource.should be_updated
   end
   
   it "does a checkout for action_sync if there's no deploy dir" do
     ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(false)
     @provider.should_receive(:action_checkout)
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_sync
+    @resource.should be_updated
   end
   
   it "does a checkout for action_sync if the deploy dir exists but is empty" do
-    ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(true)
-    ::Dir.should_receive(:entries).with("/my/deploy/dir").and_return(['.','..'])
+    ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(false)
     @provider.should_receive(:action_checkout)
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_sync
+    @resource.should be_updated
   end
   
   it "runs the sync_command on action_sync if the deploy dir exists and isn't empty" do
     ::File.should_receive(:exist?).with("/my/deploy/dir/.svn").and_return(true)
-    ::Dir.should_receive(:entries).with("/my/deploy/dir").and_return(['.','..','the','app','exists'])
     expected_cmd = "svn update -q  -r12345 /my/deploy/dir"
     @provider.should_receive(:run_command).with(:command => expected_cmd)
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_sync
+    @resource.should be_updated
   end
   
   it "runs the export_command on action_export" do
-    expected_cmd = "svn export -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
+    expected_cmd = "svn export --force -q  -r12345 http://svn.example.org/trunk/ /my/deploy/dir"
     @provider.should_receive(:run_command).with(:command => expected_cmd)
-    @resource.should_receive(:updated=).at_least(1).times.with(true)
     @provider.action_export
+    @resource.should be_updated
   end
   
 end

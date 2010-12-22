@@ -145,7 +145,7 @@ class Chef::Application::Solo < Chef::Application
       end
 
       begin
-        @chef_solo_json = JSON.parse(json_io.read)
+        @chef_solo_json = Chef::JSON.from_json(json_io.read)
         json_io.close unless json_io.closed?
       rescue JSON::ParserError => error
         Chef::Application.fatal!("Could not parse the provided JSON file (#{Chef::Config[:json_attribs]})!: " + error.message, 2)
@@ -187,7 +187,6 @@ class Chef::Application::Solo < Chef::Application
         end
 
         @chef_solo = Chef::Client.new(@chef_solo_json)
-        @chef_solo_json = nil
         @chef_solo.run
         @chef_solo = nil
         if Chef::Config[:interval]

@@ -20,13 +20,6 @@ require 'chef/mixin/xml_escape'
 require 'chef/log'
 require 'chef/config'
 require 'chef/couchdb'
-require 'chef/role'
-require 'chef/node'
-require 'chef/data_bag'
-require 'chef/data_bag_item'
-require 'chef/api_client'
-require 'chef/openid_registration'
-require 'chef/webui_user'
 require 'net/http'
 require 'libxml'
 require 'uri'
@@ -55,11 +48,10 @@ class Chef
       select_url = "/solr/select?#{to_params(options)}"
       Chef::Log.debug("Sending #{select_url} to Solr")
       req = Net::HTTP::Get.new(select_url)
-      res = @http.request(req)
-      unless res.kind_of?(Net::HTTPSuccess)
-        Chef::Log.fatal("Search Query to Solr '#{select_url}' failed")
-        res.error!
-      end
+
+      description = "Search Query to Solr '#{solr_url}#{select_url}'"
+
+      res = http_request_handler(req, description)
       Chef::Log.debug("Parsing Solr result set:\n#{res.body}")
       eval(res.body)
     end
@@ -68,34 +60,37 @@ class Chef
       Chef::Log.debug("POSTing document to SOLR:\n#{doc}")
       req = Net::HTTP::Post.new("/solr/update", "Content-Type" => "text/xml")
       req.body = doc.to_s
-      res = @http.request(req)
-      unless res.kind_of?(Net::HTTPSuccess)
-        res.error!
-      end
-      res
+
+      description = "POST to Solr '#{solr_url}'"
+
+      http_request_handler(req, description)
     end
 
-    def solr_add(data)
-      data = [data] unless data.kind_of?(Array)
+    START_XML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<add><doc>"
+    END_XML   = "</doc></add>\n"
+    FIELD_ATTR = '<field name="'
+    FIELD_ATTR_END = '">'
+    CLOSE_FIELD = "</field>"
 
+    def solr_add(data)
       Chef::Log.debug("adding to SOLR: #{data.inspect}")
-      xml_document = LibXML::XML::Document.new
-      xml_add = LibXML::XML::Node.new("add")
-      data.each do |doc|
-        xml_doc = LibXML::XML::Node.new("doc")
-        doc.each do |field, values|
-          values = [values] unless values.kind_of?(Array)
-          values.each do |v|
-            xml_field = LibXML::XML::Node.new("field")
-            xml_field["name"] = field
-            xml_field.content = xml_escape(v.to_s)
-            xml_doc << xml_field
-          end
+
+      xml = ""
+      xml << START_XML
+
+      data.each do |field, values|
+        values.each do |v|
+          xml << FIELD_ATTR
+          xml << field
+          xml << FIELD_ATTR_END
+          xml <<  xml_escape(v)
+          xml << CLOSE_FIELD
         end
-        xml_add << xml_doc
       end
-      xml_document.root = xml_add
-      post_to_solr(xml_document.to_s(:indent => false))
+      xml << END_XML
+      xml
+
+      post_to_solr(xml)
     end
 
     def solr_commit(opts={})
@@ -209,6 +204,30 @@ class Chef
       s.to_s.gsub(/([^ a-zA-Z0-9_.-]+)/n) {
         '%'+$1.unpack('H2'*$1.size).join('%').upcase
       }.tr(' ', '+')
+    end
+    
+    # handles multiple net/http exceptions and no method closed? bug
+    def http_request_handler(req, description='HTTP call')
+      res = @http.request(req)
+      unless res.kind_of?(Net::HTTPSuccess)
+        Chef::Log.fatal("#{description} failed (#{res.class} #{res.code} #{res.message})")
+        res.error!
+      end
+      res
+    rescue Timeout::Error, Errno::EINVAL, EOFError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError, Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::ETIMEDOUT, NoMethodError => e
+      # http://redmine.ruby-lang.org/issues/show/2708
+      # http://redmine.ruby-lang.org/issues/show/2758
+      if e.to_s =~ /#{Regexp.escape(%q|undefined method 'closed?' for nil:NilClass|)}/
+        Chef::Log.fatal("#{description} failed.  Chef::Exceptions::SolrConnectionError exception: Errno::ECONNREFUSED (net/http undefined method closed?) attempting to contact #{@solr_url}")
+        Chef::Log.debug("rescued error in http connect, treating it as Errno::ECONNREFUSED to hide bug in net/http")
+        Chef::Log.debug(e.backtrace.join("\n"))
+        raise Chef::Exceptions::SolrConnectionError, "Errno::ECONNREFUSED: Connection refused attempting to contact #{@solr_url}"
+      end
+
+      Chef::Log.fatal("#{description} failed.  Chef::Exceptions::SolrConnectionError exception: #{e.class.name}: #{e.to_s} attempting to contact #{@solr_url}")
+      Chef::Log.debug(e.backtrace.join("\n"))
+
+      raise Chef::Exceptions::SolrConnectionError, "#{e.class.name}: #{e.to_s}"
     end
 
   end

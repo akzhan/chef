@@ -1,8 +1,8 @@
-= Chef
+= Chef[http://www.opscode.com/chef]
 
 = DESCRIPTION:
 
-Chef is a configuration management tool designed to bring automation to your entire infrastructure. 
+Chef is a configuration management tool designed to bring automation to your entire infrastructure. Chef's development is sponsored by Opscode[http://www.opscode.com].
 
 The Chef Wiki is the definitive source of user documentation. 
 
@@ -34,6 +34,7 @@ Install these via your platform's preferred method; for example apt, yum, ports,
 
 * Git
 * CouchDB
+* RabbitMQ
 * libxml2 development package (for webrat)
 * libxslt develoment package (for webrat)
 
@@ -45,7 +46,13 @@ Install the following RubyGems.
 * cucumber
 * webrat
 * merb-core
-* roman-merb_cucumber
+* merb-assets
+* merb-haml
+* merb-helpers
+* merb-param-protection
+* merb_cucumber
+* coderay
+* libxml-ruby
 
 Ohai is also by Opscode and available on GitHub, http://github.com/opscode/ohai/tree/master.
 
