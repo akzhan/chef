@@ -202,7 +202,7 @@ class Chef
       end
 
       def load_files(file_glob, base_path, result_hash, recursive=false)
-        rm_base_path = /^#{Regexp.escape(base_path)}\/(.+)$/
+        rm_base_path = /^#{Regexp.escape(base_path)}#{Regexp.escape(::File::SEPARATOR)}(.+)$/
         file_spec = [base_path]
         file_spec << "**" if recursive
         file_spec << file_glob
