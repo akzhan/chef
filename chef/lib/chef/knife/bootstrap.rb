@@ -17,7 +17,7 @@
 #
 
 require 'chef/knife'
-require 'json'
+require 'chef/json'
 require 'tempfile'
 require 'erubis'
 
@@ -47,7 +47,7 @@ class Chef
         :short => "-N NAME",
         :long => "--node-name NAME",
         :description => "The Chef node name for your new node"
-
+      
       option :prerelease,
         :long => "--prerelease",
         :description => "Install the pre-release chef gems"
@@ -120,6 +120,8 @@ class Chef
         $stdout.sync = true
 
         Chef::Log.info("Bootstrapping Chef on #{h.color(config[:server_name], :bold)}")
+
+        knife_ssh.load_late_dependencies
 
         begin
           knife_ssh.run

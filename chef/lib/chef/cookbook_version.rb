@@ -1,9 +1,9 @@
-#
 # Author:: Adam Jacob (<adam@opscode.com>)
 # Author:: Nuo Yan (<nuo@opscode.com>)
 # Author:: Christopher Walters (<cw@opscode.com>)
 # Author:: Tim Hinderliter (<tim@opscode.com>)
-# Copyright:: Copyright (c) 2008-2010 Opscode, Inc.
+# Author:: Seth Falcon (<seth@opscode.com>)
+# Copyright:: Copyright 2008-2010 Opscode, Inc.
 # License:: Apache License, Version 2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,8 @@ require 'chef/node'
 require 'chef/resource_definition_list'
 require 'chef/recipe'
 require 'chef/cookbook/file_vendor'
+require 'chef/version_class'
+require 'chef/checksum'
 
 class Chef
   # == Chef::CookbookVersion
@@ -36,6 +38,7 @@ class Chef
   # recipe_filenames.insert) should dirty the manifest so it gets regenerated.
   class CookbookVersion
     include Chef::IndexQueue::Indexable
+    include Comparable
 
     COOKBOOK_SEGMENTS = [ :resources, :providers, :recipes, :definitions, :libraries, :attributes, :files, :templates, :root_files ]
     
@@ -208,6 +211,10 @@ class Chef
       @valid_cache_entries = nil
     end
 
+    def self.cache
+      Chef::FileCache
+    end
+
     # Setup a notification to clear the valid_cache_entries when a Chef client
     # run starts
     Chef::Client.when_run_starts do |run_status|
@@ -221,14 +228,7 @@ class Chef
     def self.sync_cookbooks(cookbook_hash)
       Chef::Log.debug("Cookbooks to load: #{cookbook_hash.inspect}")
 
-      # Remove all cookbooks no longer relevant to this node
-      Chef::FileCache.find(File.join(%w{cookbooks ** *})).each do |cache_file|
-        cache_file =~ /^cookbooks\/([^\/]+)\//
-        unless cookbook_hash.has_key?($1)
-          Chef::Log.info("Removing #{cache_file} from the cache; its cookbook is no longer needed on this client.")
-          Chef::FileCache.delete(cache_file)
-        end
-      end
+      clear_obsoleted_cookbooks(cookbook_hash)
 
       # Synchronize each of the node's cookbooks, and add to the
       # valid_cache_entries hash.
@@ -237,6 +237,19 @@ class Chef
       end
 
       true
+    end
+
+    # Iterates over cached cookbooks' files, removing files belonging to
+    # cookbooks that don't appear in +cookbook_hash+
+    def self.clear_obsoleted_cookbooks(cookbook_hash)
+      # Remove all cookbooks no longer relevant to this node
+      cache.find(File.join(%w{cookbooks ** *})).each do |cache_file|
+        cache_file =~ /^cookbooks\/([^\/]+)\//
+        unless cookbook_hash.has_key?($1)
+          Chef::Log.info("Removing #{cache_file} from the cache; its cookbook is no longer needed on this client.")
+          cache.delete(cache_file)
+        end
+      end
     end
 
     # Update the file caches for a given cache segment.  Takes a segment name
@@ -268,8 +281,8 @@ class Chef
           valid_cache_entries[cache_filename] = true
 
           current_checksum = nil
-          if Chef::FileCache.has_key?(cache_filename)
-            current_checksum = checksum_cookbook_file(Chef::FileCache.load(cache_filename, false))
+          if cache.has_key?(cache_filename)
+            current_checksum = checksum_cookbook_file(cache.load(cache_filename, false))
           end
 
           # If the checksums are different between on-disk (current) and on-server
@@ -279,13 +292,13 @@ class Chef
             raw_file = chef_server_rest.get_rest(manifest_record[:url], true)
 
             Chef::Log.info("Storing updated #{cache_filename} in the cache.")
-            Chef::FileCache.move_to(raw_file.path, cache_filename)
+            cache.move_to(raw_file.path, cache_filename)
           else
             Chef::Log.debug("Not storing #{cache_filename}, as the cache is up to date.")
           end
 
           # make the segment filenames a full path.
-          full_path_cache_filename = Chef::FileCache.load(cache_filename, false)
+          full_path_cache_filename = cache.load(cache_filename, false)
           segment_filenames << full_path_cache_filename
         end
 
@@ -301,12 +314,14 @@ class Chef
     end
 
     def self.cleanup_file_cache
-      # Delete each file in the cache that we didn't encounter in the
-      # manifest.
-      Chef::FileCache.find(File.join(%w{cookbooks ** *})).each do |cache_filename|
-        unless valid_cache_entries[cache_filename]
-          Chef::Log.info("Removing #{cache_filename} from the cache; it is no longer on the server.")
-          Chef::FileCache.delete(cache_filename)
+      unless Chef::Config[:solo]
+        # Delete each file in the cache that we didn't encounter in the
+        # manifest.
+        cache.find(File.join(%w{cookbooks ** *})).each do |cache_filename|
+          unless valid_cache_entries[cache_filename]
+            Chef::Log.info("Removing #{cache_filename} from the cache; it is no longer on the server.")
+            cache.delete(cache_filename)
+          end
         end
       end
     end
@@ -797,7 +812,10 @@ class Chef
     # checksum documents 
     def purge
       checksums.keys.each do |checksum|
-        Chef::Checksum.cdb_load(checksum, couchdb).purge
+        begin
+          Chef::Checksum.cdb_load(checksum, couchdb).purge
+        rescue Chef::Exceptions::CouchDBNotFound
+        end
       end
       cdb_destroy
     end
@@ -809,6 +827,14 @@ class Chef
     def couchdb_id=(value)
       @couchdb_id = value
       @index_id = value
+    end
+
+    def <=>(o)
+      raise Chef::Exceptions::CookbookVersionNameMismatch if self.name != o.name
+      # FIXME: can we change the interface to the Metadata class such
+      # that metadata.version returns a Chef::Version instance instead
+      # of a string?
+      Chef::Version.new(self.version) <=> Chef::Version.new(o.version)
     end
 
     private

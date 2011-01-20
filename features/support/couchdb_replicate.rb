@@ -27,7 +27,7 @@
 require 'rubygems'
 require 'rest-client'
 require 'chef/log'
-require 'json'
+require 'chef/json'
 
 # Bulk GET all documents in the given db, using the given page size.
 # Calls the required block for each page size, passing in an array of
@@ -48,7 +48,7 @@ def bulk_get_paged(db, page_size)
     # Pass :create_additions=>false so JSON parser does *not* expand
     # custom classes (such as Chef::Node, etc), and instead sticks only
     # to Array, Hash, String, etc.
-    paged_results = JSON.parse(paged_results_str, :create_additions => false)
+    paged_results = Chef::JSON.from_json(paged_results_str, :create_additions => false)
     paged_rows = paged_results['rows']
 
     if paged_rows.length > 0
@@ -77,13 +77,33 @@ def replicate_dbs(replication_specs, delete_source_dbs = false)
     rescue RestClient::ResourceNotFound => e
     end
 
-    begin
-      # Other tasks may have created the database in the mean time, so we're going to
-      # ignore errors of re-creating the target database.
-      Chef::Log.debug("Creating #{target_db}")
-      RestClient.put(target_db, nil)
-    rescue RestClient::PreconditionFailed => e
-      Chef::Log.debug("In creating #{target_db}, got #{e}; ignoring it, as something else might have created it")
+    # Sometimes Couch returns a '412 Precondition Failed' when creating a database,
+    # via a PUT to its URL, as the DELETE from the previous step has not yet finished. 
+    # This condition disappears if you try again. So here we try up to 10 times if 
+    # PreconditionFailed occurs. See
+    #   http://tickets.opscode.com/browse/CHEF-1788 and
+    #   http://tickets.opscode.com/browse/CHEF-1764.
+    #
+    # According to https://issues.apache.org/jira/browse/COUCHDB-449, setting the 
+    # 'X-Couch-Full-Commit: true' header on the DELETE should work around this issue, 
+    # but it does not.
+    db_created = nil
+    max_tries = 10
+    num_tries = 1
+    while !db_created && num_tries <= max_tries
+      begin
+        Chef::Log.debug("Creating #{target_db}")
+        RestClient.put(target_db, nil)
+        db_created = true
+      rescue RestClient::PreconditionFailed => e
+        if num_tries <= max_tries
+          Chef::Log.debug("In creating #{target_db} try #{num_tries}/#{max_tries}, got #{e}; try again")
+          sleep 0.25
+        else
+          Chef::Log.error("In creating #{target_db}, tried #{max_tries} times: got #{e}; giving up")
+        end
+      end
+      num_tries += 1
     end
 
     Chef::Log.debug("Replicating #{source_db} to #{target_db} using bulk (batch) method")
@@ -95,7 +115,7 @@ def replicate_dbs(replication_specs, delete_source_dbs = false)
         doc_in_row
       end
 
-      RestClient.post("#{target_db}/_bulk_docs", ({"docs" => paged_rows}).to_json, :content_type => "application/json")
+      RestClient.post("#{target_db}/_bulk_docs", Chef::JSON.to_json({"docs" => paged_rows}), :content_type => "application/json")
     end
 
     # Delete the source if asked to..

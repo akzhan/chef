@@ -97,7 +97,8 @@ Before do
         r = Chef::Role.new
         r.name "webserver"
         r.description "monkey"
-        r.recipes("role::webserver", "role::base")
+        r.env_run_lists({"cucumber" => ["role[db]"]})
+        r.run_list("role[webserver]", "role[base]")
         r.default_attributes({ 'a' => 'b' })
         r.override_attributes({ 'c' => 'd' })
         r 
@@ -150,6 +151,14 @@ Before do
       end
     },
     'node' => {
+      'opsmaster' => Proc.new do
+        n = Chef::Node.new
+        n.name 'opsmaster'
+        n.chef_environment 'production'
+        n.snakes "on a plane"
+        n.zombie "we're not unreasonable, I mean no-ones gonna eat your eyes"
+        n
+      end,
       'webserver' => Proc.new do
         n = Chef::Node.new
         n.name 'webserver'
@@ -191,12 +200,73 @@ Before do
         n.name 'paradise'
         n.run_list << "version_test"
         n
+      end,
+      'has_environment' => Proc.new do
+        n = Chef::Node.new
+        n.name 'has_environment'
+        n.chef_environment 'cookbooks_test'
+        n.run_list << "version_test"
+        n
+      end,
+      'really_deep_node' => Proc.new do
+        array = []
+        hash = {}
+        max_levels = 50
+        
+        max_levels.times do |num_level|
+          array = [num_level, "really_deep_string_in_array", array]
+          hash = {"really_deep_string_in_hash_#{num_level}" => hash}
+          num_level += 1
+        end
+        
+        n = Chef::Node.new
+        n.name 'really_deep_node'
+        n.run_list << "deep_node_recipe"
+        n.deep_array = array
+        n.deep_hash = hash
+        n
       end
     },
     'hash' => {
       'nothing'   => Hash.new,
       'name only' => { :name => 'test_cookbook' }
     },
+    'environment' => {
+      'cucumber' => Proc.new do
+        e = Chef::Environment.new
+        e.name 'cucumber'
+        e.description 'I like to run tests'
+        e.attributes({"attribute_priority_was" => 8})
+        e
+      end,
+      'production' => Proc.new do
+        e = Chef::Environment.new
+        e.name 'production'
+        e.description 'The real deal'
+        e
+      end,
+      'cookbooks-0.1.0' => Proc.new do
+        e = Chef::Environment.new
+        e.name 'cookbooks_test'
+        e.description 'use cookbook version 0.1.0'
+        e.cookbook 'version_test', '= 0.1.0'
+        e
+      end,
+      'cookbooks-0.1.1' => Proc.new do
+        e = Chef::Environment.new
+        e.name 'cookbooks_test'
+        e.description 'use cookbook version 0.1.1'
+        e.cookbook 'version_test', '= 0.1.1'
+        e
+      end,
+      'cookbooks-0.2.0' => Proc.new do
+        e = Chef::Environment.new
+        e.name 'cookbooks_test'
+        e.description 'use cookbook version 0.2.0'
+        e.cookbook 'version_test', '= 0.2.0'
+        e
+      end
+    }
   }
   @stash = {}
 end
@@ -264,14 +334,14 @@ Given /^an? '(.+)' named '(.+)' exists$/ do |stash_name, stash_key|
         :method => "POST",
         "HTTP_ACCEPT" => 'application/json',
         "CONTENT_TYPE" => 'application/json',
-        :input => @stash[stash_name].to_json
+        :input => Chef::JSON.to_json(@stash[stash_name])
       }.merge(sign_request("POST", request_path, OpenSSL::PKey::RSA.new(IO.read("#{tmpdir}/client.pem")), "bobo")))
     end
   end
 end
 
 Given /^sending the method '(.+)' to the '(.+)' with '(.+)'/ do |method, stash_name, update_value|
-  update_value = JSON.parse(update_value) if update_value =~ /^\[|\{/
+  update_value = Chef::JSON.from_json(update_value) if update_value =~ /^\[|\{/
   @stash[stash_name].send(method.to_sym, update_value)
 end
 

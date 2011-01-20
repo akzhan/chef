@@ -17,7 +17,7 @@
 #
 
 require 'chef/version'
-
+require 'chef/nil_argument'
 require 'extlib'
 require 'chef/exceptions'
 require 'chef/log'
@@ -37,3 +37,4 @@ require 'chef/handler/json_file'
 require 'chef/monkey_patches/tempfile'
 require 'chef/monkey_patches/dir'
 require 'chef/monkey_patches/string'
+require 'chef/monkey_patches/numeric'

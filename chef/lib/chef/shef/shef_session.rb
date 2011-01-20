@@ -174,7 +174,7 @@ module Shef
   
   class ClientSession < SoloSession
 
-    session_type :solo
+    session_type :client
     
     def save_node
       @client.save_node
@@ -190,7 +190,7 @@ module Shef
       @client.register
       @client.build_node
       
-      @client.sync_cookbooks({})
+      @client.sync_cookbooks
     end
 
   end
@@ -263,7 +263,7 @@ module Shef
       @client.register
       @client.build_node
 
-      @client.sync_cookbooks({})
+      @client.sync_cookbooks
     end
 
   end

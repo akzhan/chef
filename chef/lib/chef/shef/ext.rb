@@ -23,6 +23,7 @@ require 'chef/version'
 require 'chef/shef/shef_session'
 require 'chef/shef/model_wrapper'
 require 'chef/shef/shef_rest'
+require 'chef/json'
 
 module Shef
   module Extensions
@@ -226,16 +227,6 @@ E
         :attributes
       end
 
-      desc "returns the current node (i.e., this host)"
-      def node
-        Shef.session.node
-      end
-
-      desc "pretty print the node's attributes"
-      def ohai(key=nil)
-        pp(key ? node.attribute[key] : node.attribute)
-      end
-
       desc "run chef using the current recipe"
       def run_chef
         Chef::Log.level = :debug
@@ -295,6 +286,18 @@ E
       end
     end
 
+    MainContextExtensions = Proc.new do
+      desc "returns the current node (i.e., this host)"
+      def node
+        Shef.session.node
+      end
+
+      desc "pretty print the node's attributes"
+      def ohai(key=nil)
+        pp(key ? node.attribute[key] : node.attribute)
+      end
+    end
+
     RESTApiExtensions = Proc.new do
       desc "edit an object in your EDITOR"
       explain(<<-E)
@@ -325,13 +328,13 @@ E
 
         edited_data = Tempfile.open([filename, ".js"]) do |tempfile|
           tempfile.sync = true
-          tempfile.puts object.to_json
+          tempfile.puts Chef::JSON.to_json(object)
           system("#{Shef.editor.to_s} #{tempfile.path}")
           tempfile.rewind
           tempfile.read
         end
 
-        JSON.parse(edited_data)
+        Chef::JSON.from_json(edited_data)
       end
 
       desc "Find and edit API clients"
@@ -530,6 +533,7 @@ E
 
     def self.extend_context_object(obj)
       obj.instance_eval(&ObjectUIExtensions)
+      obj.instance_eval(&MainContextExtensions)
       obj.instance_eval(&RESTApiExtensions)
       obj.extend(FileUtils)
       obj.extend(Chef::Mixin::Language)
