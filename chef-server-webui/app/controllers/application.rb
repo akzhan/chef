@@ -114,7 +114,7 @@ class Application < Merb::Controller
   end
 
   def load_environments
-    @org_environments = Chef::Environment.list.keys.sort
+    @environments = Chef::Environment.list.keys.sort
   end
 
   # Load a cookbook and return a hash with a list of all the files of a
@@ -259,15 +259,8 @@ class Application < Merb::Controller
     end
   end
 
-  def get_available_recipes
-    r = Chef::REST.new(Chef::Config[:chef_server_url])
-    all_recipes = Array.new
-    r.get_rest('cookbooks/_recipes').keys.each do |cb|
-      all_recipes << all[cb].sort{|x,y| y <=> x }.map do |ver, recipes|
-        recipes.map{ |rn| rn == "default" ? "#{cb} #{ver}" : "#{cb}::#{rn} #{ver}" }
-      end
-    end
-    all_recipes.flatten.uniq
+  def list_available_recipes_for(environment)
+    Chef::Environment.load_filtered_recipe_list(environment)
   end
 
   def convert_newline_to_br(string)
