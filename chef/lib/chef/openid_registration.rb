@@ -113,7 +113,7 @@ class Chef
         'chef_type' => 'openid_registration',
       }
       result["_rev"] = @couchdb_rev if @couchdb_rev
-      result.to_json(*a)
+      Chef::JSON.to_json(result, *a)
     end
     
     # Create a Chef::Node from JSON
