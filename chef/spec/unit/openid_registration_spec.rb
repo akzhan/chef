@@ -43,7 +43,7 @@ describe Chef::OpenIDRegistration, "to_json" do
   it "should serialize itself as json" do
     oreg = Chef::OpenIDRegistration.new
     oreg.set_password("monkey")
-    json = oreg.to_json
+    json = Chef::JSON.to_json(oreg)
     %w{json_class chef_type name salt password validated}.each do |verify|
       json.should =~ /#{verify}/
     end
@@ -55,7 +55,7 @@ describe Chef::OpenIDRegistration, "from_json" do
     oreg = Chef::OpenIDRegistration.new()
     oreg.name = "foobar"
     oreg.set_password("monkey")
-    oreg_json = oreg.to_json
+    oreg_json = Chef::JSON.to_json(oreg)
     nreg = Chef::JSON.from_json(oreg_json)
     nreg.should be_a_kind_of(Chef::OpenIDRegistration)
     %w{name salt password validated}.each do |verify|
